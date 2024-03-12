@@ -1,0 +1,36 @@
+stages:
+  - api_demo
+  - build
+
+job_with_secrets: 
+  stage: api_demo
+  before_script:
+    - apt-get update
+    - apt-get install jq -y
+  script:
+    - |
+        HCP_API_TOKEN=$(curl --location 'https://auth.hashicorp.com/oauth/token' \
+        --header 'content-type: application/json' \
+        --data '{
+        "audience": "https://api.hashicorp.cloud",
+        "grant_type": "client_credentials",
+        "client_id": "'$HCP_CLIENT_ID'",
+        "client_secret": "'$HCP_CLIENT_SECRET'"
+        }' | jq -r .access_token)
+    - |
+       curl \
+       --location "https://api.cloud.hashicorp.com/secrets/2023-06-13/organizations/fba00cc9-0b3e-4e49-8e7e-02aeff6c3895/projects/4c96d7a1-0f68-49fc-a400-c4b861fa7f81/apps/vault-demo-app/open" \
+       --request GET \
+       --header "Authorization: Bearer $HCP_API_TOKEN" | jq .secrets | jq .[] | jq .version | jq .value
+        
+
+inject_script:
+  image: ubuntu
+  stage: build
+  script:
+    - chmod 755 ./bin/print_token.sh
+    - apt update && apt install -y gpg wget lsb-release
+    - wget -O- https://apt.releases.hashicorp.com/gpg | gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+    - echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/hashicorp.list
+    - apt update && apt install vlt
+    - vlt run --command ./bin/print_token.sh
